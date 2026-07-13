@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from snow import Driftsstatus, Forvaltning, Frekvens, RpaProcess
+from snow import Driftsstatus, Forvaltning, Frekvens, Personoplysning, Persontype, RpaProcess, User
 
 from conftest import RPA_RECORD
 
@@ -53,6 +53,32 @@ def test_invalid_choice_value_rejected():
         proc.driftsstatus = "Hver anden torsdag"
     with pytest.raises(ValidationError):
         proc.frekvens = "Kvartalsvis"
+
+
+def test_glide_lists_parse_and_serialize():
+    record = dict(
+        RPA_RECORD,
+        u_personf_lsomhed_i_de_indsamlede_data=f"{Personoplysning.CPR_NUMMER},{Personoplysning.ALMINDELIGE_PERSONDATA}",
+        u_fagspecialister="aaaa1111aaaa1111aaaa1111aaaa1111,bbbb2222bbbb2222bbbb2222bbbb2222",
+    )
+    proc = RpaProcess.from_api(record)
+    assert proc.personoplysninger == [Personoplysning.CPR_NUMMER, Personoplysning.ALMINDELIGE_PERSONDATA]
+    assert len(proc.fagspecialister) == 2
+
+    proc.persontyper = [Persontype.BOERN, Persontype.BORGERE]
+    proc.fagspecialister = [User(sys_id="cccc3333cccc3333cccc3333cccc3333", name="X")]
+    payload = proc.dirty_payload()
+    assert payload["u_persontyper_i_de_indsamlede_data"] == f"{Persontype.BOERN.value},{Persontype.BORGERE.value}"
+    assert payload["u_fagspecialister"] == "cccc3333cccc3333cccc3333cccc3333"
+
+
+def test_it_system_rejects_multiple_values():
+    # ServiceNow silently keeps only the first value on this single-reference
+    # field, so the model refuses multi-values instead of losing data.
+    proc = RpaProcess.from_api(RPA_RECORD)
+    proc.it_system = "25c5d70d9755251021cefda6f053af52"  # one value is fine
+    with pytest.raises(ValidationError):
+        proc.it_system = "25c5d70d9755251021cefda6f053af52,bab5170d9755251021cefda6f053afaa"
 
 
 def test_full_payload_skips_empty_fields():

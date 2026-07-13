@@ -15,7 +15,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, ClassVar, Iterator
 
-from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from .client import DEFAULT_INSTANCE, ServiceNowClient
 
@@ -39,6 +39,25 @@ class Forvaltning(StrEnum):
     BKF = "By- og Kulturforvaltningen"
 
 
+class Personoplysning(StrEnum):
+    """Kategorier af personoplysninger (values are the option sys_ids in ServiceNow)."""
+
+    ALMINDELIGE_PERSONDATA = "54ce8357973e395021cefda6f053af03"  # Almindelige persondata jf. artikel 6
+    CPR_NUMMER = "d9be0357973e395021cefda6f053aff0"  # CPR nummer jf. databeskyttelsesloven §11
+    FOELSOMME_PERSONDATA = "0fce8357973e395021cefda6f053afd9"  # Følsomme persondata jf. artikel 9
+    INGEN_PERSONDATA = "aeaec357973e395021cefda6f053afcb"  # Ingen persondata
+
+
+class Persontype(StrEnum):
+    """Kategorier af registrerede (values are the option sys_ids in ServiceNow)."""
+
+    BORGERE = "15160ec3c365c654895fbaf4e401310e"
+    BOERN = "85e586c3c365c654895fbaf4e401316b"
+    EKSTERNE_SAMARBEJDSPARTNERE = "6e068ac3c365c654895fbaf4e4013111"
+    MEDARBEJDERE = "80160e83c365c654895fbaf4e40131a6"
+    SAERLIGT_UDSATTE = "a3f54ac3c365c654895fbaf4e4013129"
+
+
 class Frekvens(StrEnum):
     # Values verified from live data (used by RDA processes). The full choice list
     # in ServiceNow may contain more (sys_choice is not readable with our OAuth scope);
@@ -46,6 +65,15 @@ class Frekvens(StrEnum):
     UGENTLIGT = "Ugentligt"
     MAANEDLIGT = "Månedligt"
     AARLIGT = "Årligt"
+
+
+class User(BaseModel):
+    """A ServiceNow user (sys_user). Returned by RpaClient.find_user()."""
+
+    sys_id: str
+    name: str = ""
+    email: str = ""
+    active: bool = True
 
 
 class RpaProcess(BaseModel):
@@ -78,9 +106,13 @@ class RpaProcess(BaseModel):
     procestid_minutter: str = ""
     udbetaling: bool | None = None
     persondata_i_processen: bool | None = None
-    personfolsomhed: str = ""
-    persontyper: str = ""
-    fagspecialister: str = ""
+    # Multi-selects (lists of sys_ids; assignments accept Personoplysning/Persontype/User members).
+    # Assign a new list to change them — in-place .append() is not tracked by save().
+    personoplysninger: list[str] = Field(default_factory=list)
+    persontyper: list[str] = Field(default_factory=list)
+    fagspecialister: list[str] = Field(default_factory=list)
+    # User references (sys_user sys_ids; assignments also accept a User object)
+    procesejer: str = ""
     fagsuperbruger: str = ""
     proceskonsulent: str = ""
     udviklet_af: str = ""
@@ -97,9 +129,10 @@ class RpaProcess(BaseModel):
         "procestid_minutter": "u_procestid_minutter",
         "udbetaling": "u_udbetaling",
         "persondata_i_processen": "u_findes_der_persondata_i_rpa_processen",
-        "personfolsomhed": "u_personf_lsomhed_i_de_indsamlede_data",
+        "personoplysninger": "u_personf_lsomhed_i_de_indsamlede_data",
         "persontyper": "u_persontyper_i_de_indsamlede_data",
         "fagspecialister": "u_fagspecialister",
+        "procesejer": "owned_by",
         "fagsuperbruger": "u_fagsuperbruger",
         "proceskonsulent": "u_proceskonsulent",
         "udviklet_af": "u_udviklet_af",
@@ -120,6 +153,33 @@ class RpaProcess(BaseModel):
     @classmethod
     def _empty_to_none(cls, v: Any) -> Any:
         return None if v == "" else v
+
+    @field_validator("procesejer", "fagsuperbruger", "proceskonsulent", "udviklet_af", mode="before")
+    @classmethod
+    def _user_to_sys_id(cls, v: Any) -> Any:
+        return v.sys_id if isinstance(v, User) else v
+
+    @field_validator("personoplysninger", "persontyper", "fagspecialister", mode="before")
+    @classmethod
+    def _glide_list(cls, v: Any) -> Any:
+        # ServiceNow sends glide_lists as comma-joined sys_ids; accept User/enum members too.
+        if v in ("", None):
+            return []
+        if isinstance(v, str):
+            return v.split(",")
+        return [item.sys_id if isinstance(item, User) else str(item) for item in v]
+
+    @field_validator("it_system")
+    @classmethod
+    def _single_it_system(cls, v: str) -> str:
+        # u_it_system is a single reference; ServiceNow silently drops everything
+        # after the first value (verified live). Extra systems belong in
+        # yderligere_integrationer.
+        if "," in v:
+            raise ValueError(
+                "it_system holds exactly one system; put additional systems in yderligere_integrationer"
+            )
+        return v
 
     @field_validator("udbetaling", "persondata_i_processen", mode="before")
     @classmethod
@@ -154,6 +214,8 @@ class RpaProcess(BaseModel):
             return ""
         if isinstance(value, bool):
             return "Ja" if value else "Nej"
+        if isinstance(value, list):
+            return ",".join(value)
         if isinstance(value, StrEnum):
             return value.value
         return str(value)
@@ -172,7 +234,7 @@ class RpaProcess(BaseModel):
         payload = {}
         for field in self.WRITABLE:
             value = getattr(self, field)
-            if value not in ("", None):
+            if value not in ("", None) and value != []:
                 alias = self._ALIASES.get(field, field)
                 payload[alias] = self._to_api_value(value)
         return payload
@@ -262,6 +324,28 @@ class RpaClient:
         rows = self._sn.query(TABLE, query=f"parent={RPA_PARENT_SYS_ID}^nameLIKE{text}",
                               fields=_FETCH_FIELDS, limit=100)
         return [RpaProcess.from_api(r) for r in rows]
+
+    def find_user(self, key: str) -> User:
+        """Find one active user by email, full name, or sys_id.
+
+        The result can be assigned directly to the user fields:
+            proc.proceskonsulent = rpa.find_user("clm@odense.dk")
+        """
+        if len(key) == 32 and all(ch in "0123456789abcdef" for ch in key):
+            query = f"sys_id={key}"
+        elif "@" in key:
+            query = f"email={key}"
+        else:
+            query = f"name={key}"
+        fields = ["sys_id", "name", "email", "active"]
+        rows = self._sn.query("sys_user", query=f"{query}^active=true", fields=fields, limit=2)
+        if not rows and "@" not in key:
+            rows = self._sn.query("sys_user", query=f"nameLIKE{key}^active=true", fields=fields, limit=2)
+        if not rows:
+            raise LookupError(f"No active user matches {key!r}")
+        if len(rows) > 1:
+            raise LookupError(f"{key!r} matches more than one user; use their email or sys_id")
+        return User.model_validate(rows[0])
 
     # --- writes -----------------------------------------------------------
 

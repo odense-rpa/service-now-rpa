@@ -86,6 +86,29 @@ def test_create_requires_name_and_no_sys_id(rpa):
         rpa.create(RpaProcess.from_api(RPA_RECORD))
 
 
+def test_find_user_by_email_and_name(rpa):
+    user = rpa.find_user("ana@odense.dk")
+    assert user.name == "Anna Andersen"
+    assert rpa.find_user("Anna Andersen").sys_id == user.sys_id
+    assert rpa.find_user(user.sys_id).email == "ana@odense.dk"
+
+
+def test_find_user_ambiguous_or_missing(rpa):
+    with pytest.raises(LookupError, match="more than one"):
+        rpa.find_user("Bo Berg")  # two users share this name
+    with pytest.raises(LookupError, match="No active user"):
+        rpa.find_user("findes-ikke@odense.dk")
+
+
+def test_procesejer_is_writable_as_owned_by(rpa, fake):
+    proc = rpa.get("BSN0009999")
+    assert proc.procesejer == "aaaa1111aaaa1111aaaa1111aaaa1111"
+    proc.procesejer = rpa.find_user("bob@odense.dk")  # User object accepted directly
+    payload = rpa.save(proc)
+    assert payload == {"owned_by": "bbbb2222bbbb2222bbbb2222bbbb2222"}
+    assert fake.records[proc.sys_id]["owned_by"] == "bbbb2222bbbb2222bbbb2222bbbb2222"
+
+
 def test_create_dry_run_writes_nothing(rpa, fake):
     requests_before = len(fake.requests)
     rpa.create(RpaProcess(name="Ny proces"), dry_run=True)

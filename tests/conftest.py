@@ -11,6 +11,7 @@ RPA_RECORD = {
     "number": "BSN0009999",
     "parent": RPA_PARENT_SYS_ID,
     "name": "Testproces",
+    "owned_by": "aaaa1111aaaa1111aaaa1111aaaa1111",
     "description": "",
     "comments": "",
     "start_date": "",
@@ -33,6 +34,12 @@ RPA_RECORD = {
     "u_sbsyslink": "",
     "u_yderligere_integrationer": "",
 }
+
+USERS = [
+    {"sys_id": "aaaa1111aaaa1111aaaa1111aaaa1111", "name": "Anna Andersen", "email": "ana@odense.dk", "active": "true"},
+    {"sys_id": "bbbb2222bbbb2222bbbb2222bbbb2222", "name": "Bo Berg", "email": "bob@odense.dk", "active": "true"},
+    {"sys_id": "cccc3333cccc3333cccc3333cccc3333", "name": "Bo Berg", "email": "bob2@odense.dk", "active": "true"},
+]
 
 
 class FakeServiceNow:
@@ -58,6 +65,11 @@ class FakeServiceNow:
             self.fail_next_with_401 = False
             return httpx.Response(401, json={"error": {"message": "unauthorized"}})
         assert request.headers["Authorization"].startswith("Bearer tok-")
+
+        if request.method == "GET" and request.url.path == "/api/now/table/sys_user":
+            query = request.url.params.get("sysparm_query", "")
+            matches = [u for u in USERS if self._matches(u, query)]
+            return httpx.Response(200, json={"result": matches})
 
         if request.method == "GET" and request.url.path == "/api/now/table/service_offering":
             query = request.url.params.get("sysparm_query", "")

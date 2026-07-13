@@ -48,7 +48,7 @@ RPA processes are `service_offering` records under the "RPA Processer" service.
 else in the table.
 
 ```python
-from snow import RpaClient, RpaProcess, Driftsstatus, Forvaltning
+from snow import RpaClient, RpaProcess, Driftsstatus, Forvaltning, Personoplysning, Persontype
 
 with RpaClient.from_env() as rpa:   # or RpaClient(client_id=..., client_secret=..., scope=...)
     # Fetch by number, sys_id, or exact name
@@ -68,6 +68,15 @@ with RpaClient.from_env() as rpa:   # or RpaClient(client_id=..., client_secret=
     for p in rpa.list(driftsstatus=Driftsstatus.I_DRIFT, forvaltning=Forvaltning.BSF):
         print(p.number, p.name)
     hits = rpa.search("faktura")
+
+    # Users: look up by email, name, or sys_id — assign directly to user fields
+    proc.proceskonsulent = rpa.find_user("clm@odense.dk")
+    proc.procesejer = rpa.find_user("Anders Drejer Lønbæk")   # writes owned_by
+
+    # GDPR multi-selects are lists with typed options
+    proc.personoplysninger = [Personoplysning.CPR_NUMMER, Personoplysning.ALMINDELIGE_PERSONDATA]
+    proc.persontyper = [Persontype.BORGERE, Persontype.BOERN]
+    proc.fagspecialister = [rpa.find_user("gbn@odense.dk"), rpa.find_user("ninm@odense.dk")]
 
     # Create a new process (lands under "RPA Processer" automatically)
     new = rpa.create(RpaProcess(
