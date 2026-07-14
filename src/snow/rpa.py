@@ -90,6 +90,12 @@ class RpaProcess(BaseModel):
     number: str = ""
     parent: str = ""
 
+    # Audit (read-only; ServiceNow datetimes as "YYYY-MM-DD HH:MM:SS" strings)
+    sys_created_on: str = ""
+    sys_created_by: str = ""
+    sys_updated_on: str = ""
+    sys_updated_by: str = ""
+
     # Core info
     name: str = ""
     description: str = ""

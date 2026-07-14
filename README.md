@@ -91,6 +91,9 @@ with RpaClient.from_env() as rpa:   # or RpaClient(client_id=..., client_secret=
 Field names are Danish, matching the ServiceNow labels (`driftsstatus`,
 `forvaltning`, `proceskonsulent`, …). `udbetaling` and
 `persondata_i_processen` are Python bools, stored as "Ja"/"Nej".
+Audit metadata is available read-only: `sys_created_on`, `sys_created_by`,
+`sys_updated_on`, `sys_updated_by` (ServiceNow datetimes as
+`"YYYY-MM-DD HH:MM:SS"` strings).
 
 Safety rails, since this is the live instance:
 - Only fields in `RpaProcess.WRITABLE` can be written (the `u_*` RPA fields,

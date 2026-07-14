@@ -31,6 +31,19 @@ def test_dirty_payload_contains_only_changed_fields():
     }
 
 
+def test_audit_fields_are_read_only():
+    proc = RpaProcess.from_api(RPA_RECORD)
+    assert proc.sys_created_on == "2024-03-01 08:15:00"
+    assert proc.sys_created_by == "ana@odense.dk"
+    assert proc.sys_updated_on == "2026-06-30 14:02:11"
+    assert proc.sys_updated_by == "bob@odense.dk"
+    # Assigning them never produces a write payload.
+    proc.sys_created_on = "1999-01-01 00:00:00"
+    proc.sys_updated_by = "hacker"
+    assert proc.dirty_payload() == {}
+    assert "sys_created_on" not in proc.full_payload()
+
+
 def test_non_writable_fields_never_reach_payload():
     proc = RpaProcess.from_api(RPA_RECORD)
     proc.number = "BSN0000001"  # tracked as dirty, but number is not writable
