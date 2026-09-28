@@ -22,6 +22,9 @@ from .client import DEFAULT_INSTANCE, ServiceNowClient
 TABLE = "service_offering"
 # sys_id of the "RPA Processer" business service (cmdb_ci_service) all RPA processes hang under.
 RPA_PARENT_SYS_ID = "076fdbd897dff11021cefda6f053af0f"
+# Values a choice field holds when nothing is chosen: empty, or the form's placeholder,
+# which new records can carry as a literal value.
+UNSET_CHOICE_VALUES = ("", "- Vælg -")
 
 
 class Driftsstatus(StrEnum):
@@ -158,7 +161,7 @@ class RpaProcess(BaseModel):
     @field_validator("driftsstatus", "forvaltning", "frekvens", mode="before")
     @classmethod
     def _empty_to_none(cls, v: Any) -> Any:
-        return None if v == "" else v
+        return None if v in UNSET_CHOICE_VALUES else v
 
     @field_validator("procesejer", "fagsuperbruger", "proceskonsulent", "udviklet_af", mode="before")
     @classmethod
@@ -190,7 +193,7 @@ class RpaProcess(BaseModel):
     @field_validator("udbetaling", "persondata_i_processen", mode="before")
     @classmethod
     def _ja_nej_to_bool(cls, v: Any) -> Any:
-        if v in ("", None):
+        if v is None or v in UNSET_CHOICE_VALUES:
             return None
         if isinstance(v, str):
             return v.strip().lower() == "ja"

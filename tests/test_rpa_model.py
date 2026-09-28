@@ -16,6 +16,25 @@ def test_from_api_parses_types():
     assert proc.frekvens is None  # empty string -> None
 
 
+def test_from_api_treats_choice_placeholder_as_unset():
+    # New records can hold the form placeholder as a literal value.
+    record = {
+        **RPA_RECORD,
+        "u_driftsstatus": "- Vælg -",
+        "u_forvaltning": "- Vælg -",
+        "u_frekvens": "- Vælg -",
+        "u_udbetaling": "- Vælg -",
+        "u_findes_der_persondata_i_rpa_processen": "- Vælg -",
+    }
+    proc = RpaProcess.from_api(record)
+    assert proc.driftsstatus is None
+    assert proc.forvaltning is None
+    assert proc.frekvens is None
+    assert proc.udbetaling is None
+    assert proc.persondata_i_processen is None
+    assert proc.dirty_payload() == {}
+
+
 def test_from_api_starts_clean():
     proc = RpaProcess.from_api(RPA_RECORD)
     assert proc.dirty_payload() == {}
